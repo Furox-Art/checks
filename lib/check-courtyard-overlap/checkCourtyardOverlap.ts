@@ -7,6 +7,8 @@ import type {
   PcbCourtyardCircle,
   PcbCourtyardOutline,
   PcbCourtyardOverlapError,
+  PcbCourtyardPill,
+  PcbCourtyardPolygon,
   PcbCourtyardRect,
 } from "circuit-json"
 
@@ -14,6 +16,58 @@ type CourtyardElement =
   | PcbCourtyardRect
   | PcbCourtyardCircle
   | PcbCourtyardOutline
+  | PcbCourtyardPolygon
+  | PcbCourtyardPill
+
+function getRoundedRectPolygon(
+  center: { x: number; y: number },
+  width: number,
+  height: number,
+  radius: number,
+): { x: number; y: number }[] {
+  const halfWidth = width / 2
+  const halfHeight = height / 2
+  const r = Math.max(0, Math.min(radius, halfWidth, halfHeight))
+
+  if (r === 0) {
+    return [
+      { x: center.x - halfWidth, y: center.y - halfHeight },
+      { x: center.x + halfWidth, y: center.y - halfHeight },
+      { x: center.x + halfWidth, y: center.y + halfHeight },
+      { x: center.x - halfWidth, y: center.y + halfHeight },
+    ]
+  }
+
+  const stepsPerCorner = 8
+  const corners = [
+    { x: center.x + halfWidth - r, y: center.y + halfHeight - r, start: 0 },
+    {
+      x: center.x - halfWidth + r,
+      y: center.y + halfHeight - r,
+      start: Math.PI / 2,
+    },
+    {
+      x: center.x - halfWidth + r,
+      y: center.y - halfHeight + r,
+      start: Math.PI,
+    },
+    {
+      x: center.x + halfWidth - r,
+      y: center.y - halfHeight + r,
+      start: (3 * Math.PI) / 2,
+    },
+  ]
+
+  return corners.flatMap((corner) =>
+    Array.from({ length: stepsPerCorner }, (_, i) => {
+      const angle = corner.start + (i * Math.PI) / (2 * (stepsPerCorner - 1))
+      return {
+        x: corner.x + r * Math.cos(angle),
+        y: corner.y + r * Math.sin(angle),
+      }
+    }),
+  )
+}
 
 function getCourtyardPolygon(el: CourtyardElement): { x: number; y: number }[] {
   if (el.type === "pcb_courtyard_rect") {
@@ -42,6 +96,12 @@ function getCourtyardPolygon(el: CourtyardElement): { x: number; y: number }[] {
         y: el.center.y + el.radius * Math.sin(a),
       }
     })
+  }
+  if (el.type === "pcb_courtyard_polygon") {
+    return el.points
+  }
+  if (el.type === "pcb_courtyard_pill") {
+    return getRoundedRectPolygon(el.center, el.width, el.height, el.radius)
   }
   return el.outline
 }
@@ -105,7 +165,9 @@ export function checkCourtyardOverlap(
       (el): el is CourtyardElement =>
         el.type === "pcb_courtyard_rect" ||
         el.type === "pcb_courtyard_circle" ||
-        el.type === "pcb_courtyard_outline",
+        el.type === "pcb_courtyard_outline" ||
+        el.type === "pcb_courtyard_polygon" ||
+        el.type === "pcb_courtyard_pill",
     )
     .filter((el) => !doNotPlaceComponentIds.has(el.pcb_component_id))
 
